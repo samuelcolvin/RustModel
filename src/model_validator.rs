@@ -3,15 +3,16 @@ use std::ptr::null_mut;
 use std::sync::Arc;
 
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyString, PyTuple, PyType};
-
-use crate::errors::{ErrorType, LineError, ValResult};
-use crate::field::{FieldInfo, FieldValue};
-use crate::model_data::ModelData;
-use crate::validators::{CombinedValidator, Validator};
-use ahash::AHashMap;
+use pyo3::types::{PyDict, PyList, PyString, PyTuple, PyType};
 use pyo3::exceptions::PyTypeError;
 use pyo3::intern;
+
+use ahash::AHashMap;
+
+use crate::errors::{ErrorType, LineError, ValResult};
+use crate::field::{FieldInfo, FieldValue, parse_fields};
+use crate::model_data::ModelData;
+use crate::validators::Validator;
 
 #[derive(Debug)]
 #[pyclass(module = "fastmodel")]
@@ -24,39 +25,9 @@ pub struct ModelValidator {
 #[pymethods]
 impl ModelValidator {
     #[new]
-    fn new(py: Python, class: Bound<'_, PyType>) -> PyResult<Self> {
+    fn new(py: Python, class: Bound<'_, PyType>, fields: Bound<'_, PyList>) -> PyResult<Self> {
         // hard code fields for now
-        let field_info = vec![
-            FieldInfo::new(
-                py,
-                "foo",
-                true,
-                py.None(),
-                CombinedValidator::new("string")?,
-            ),
-            FieldInfo::new(
-                py,
-                "bar",
-                false,
-                123.to_object(py),
-                CombinedValidator::new("int")?,
-            ),
-            FieldInfo::new(
-                py,
-                "spam",
-                true,
-                py.None(),
-                CombinedValidator::new("string")?,
-            ),
-            FieldInfo::new(py, "ham", true, py.None(), CombinedValidator::new("int")?),
-            FieldInfo::new(
-                py,
-                "egg",
-                true,
-                py.None(),
-                CombinedValidator::new("string")?,
-            ),
-        ];
+        let field_info = parse_fields(py, fields)?;
         let key_lookup: AHashMap<String, usize> = field_info
             .iter()
             .enumerate()
@@ -75,6 +46,14 @@ impl ModelValidator {
             Ok(f) => Ok(f.into_py(py)),
             Err(e) => Err(e.to_py_err(py)),
         }
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "ModelValidator(class={}, field_info={:#?})",
+            self.class,
+            self.field_info
+        )
     }
 }
 

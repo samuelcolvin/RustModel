@@ -26,7 +26,36 @@ class MyModel(FastModel):
     egg: str
 
 
-validator = ModelValidator(MyModel)
+validator = ModelValidator(
+    MyModel,
+    [
+        {
+            'name': 'foo',
+            'type': 'string',
+        },
+        {
+            'name': 'bar',
+            'type': 'int',
+            'default': 123,
+        },
+        {
+            'name': 'spam',
+            'type': 'string',
+            'default': 'x',
+        },
+        {
+            'name': 'ham',
+            'type': 'int',
+            'default': 456,
+        },
+        {
+            'name': 'egg',
+            'type': 'string',
+            'default': 'y',
+        }
+    ]
+)
+
 input_data = {
     'ham': 123,
     'foo': 'hello',

@@ -32,6 +32,10 @@ impl ValidationError {
     fn errors<'py>(&self, py: Python<'py>) -> Bound<'py, PyList> {
         PyList::new_bound(py, self.errors.iter().map(|e| e.to_object(py)))
     }
+
+    fn __str__(&self) -> String {
+        format!("{:#?}", self.errors)
+    }
 }
 
 #[derive(Debug)]

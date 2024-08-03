@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 use std::sync::Arc;
-
+use pyo3::exceptions::PyKeyError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyString};
 use serde::Serialize;
@@ -33,6 +33,31 @@ impl FieldInfo {
             default,
             validator,
         }
+    }
+}
+
+pub fn parse_fields(py: Python, fields: Bound<PyList>) -> PyResult<Vec<FieldInfo>> {
+    fields
+        .iter()
+        .map(|field| {
+            let field: &Bound<PyDict> = field.downcast()?;
+            let name = get_as_req(field, "name")?;
+            let (required, default) = match field.get_item("default")? {
+                Some(default) => (false, default.to_object(py)),
+                None => (true, py.None()),
+            };
+            let val_type = get_as_req(field, "type")?;
+            let validator = CombinedValidator::new(&val_type)?;
+            Ok(FieldInfo::new(py, &name, required, default, validator))
+        })
+        .collect()
+}
+
+
+fn get_as_req<'py>(field: &Bound<'py, PyDict>, key: &str) -> PyResult<String> {
+    match field.get_item(key)? {
+        Some(t) => t.extract(),
+        None => Err(PyKeyError::new_err(key.to_string())),
     }
 }
 
