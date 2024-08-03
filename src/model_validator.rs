@@ -14,7 +14,7 @@ use pyo3::exceptions::PyTypeError;
 use pyo3::intern;
 
 #[derive(Debug)]
-#[pyclass(module="fastmodel")]
+#[pyclass(module = "fastmodel")]
 pub struct ModelValidator {
     field_info: Arc<Vec<FieldInfo>>,
     key_lookup: Arc<AHashMap<String, usize>>,
@@ -48,13 +48,7 @@ impl ModelValidator {
                 py.None(),
                 CombinedValidator::new("string")?,
             ),
-            FieldInfo::new(
-                py,
-                "ham",
-                true,
-                py.None(),
-                CombinedValidator::new("int")?,
-            ),
+            FieldInfo::new(py, "ham", true, py.None(), CombinedValidator::new("int")?),
             FieldInfo::new(
                 py,
                 "egg",
@@ -88,8 +82,9 @@ impl Validator for ModelValidator {
     fn validate_python<'py>(&self, py: Python, data: &Bound<'py, PyAny>) -> ValResult<FieldValue> {
         let dict = data.downcast::<PyDict>().map_err(|_| ErrorType::DictType)?;
         let mut errors: Vec<LineError> = Vec::new();
-        // can't clone `FieldValue`
+
         let field_count = self.field_info.len();
+        // can't clone `FieldValue`
         let mut data: Vec<Option<FieldValue>> = (0..field_count).map(|_| None).collect();
         let mut fields_found = 0;
 
@@ -98,12 +93,13 @@ impl Validator for ModelValidator {
                 let key_str = key_py_str.to_str()?;
                 if let Some(index) = self.key_lookup.get(key_str) {
                     let field_info = &self.field_info[*index];
-                    let field_value = field_info
-                        .validator
-                        .validate_python(py, &value)
-                        .map_err(|e| e.with_loc(key_str))?;
-                    data[*index] = Some(field_value);
-                    fields_found += 1;
+                    match field_info.validator.validate_python(py, &value) {
+                        Ok(field_value) => {
+                            data[*index] = Some(field_value);
+                            fields_found += 1;
+                        }
+                        Err(e) => errors.extend(e.line_errors_with_loc(key_str)?),
+                    }
                 }
             }
         }

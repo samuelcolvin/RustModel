@@ -10,7 +10,7 @@ use serde::ser::{SerializeMap, SerializeSeq};
 use serde::Serialize;
 
 #[derive(Debug)]
-#[pyclass(module="fastmodel")]
+#[pyclass(module = "fastmodel")]
 pub struct ModelData {
     field_info: Arc<Vec<FieldInfo>>,
     field_data: Vec<Option<FieldValue>>,
@@ -22,7 +22,7 @@ impl ModelData {
     fn get_attr(&self, py: Python, key: String) -> PyResult<PyObject> {
         if let Some(index) = self.key_lookup.get(&key) {
             match &self.field_data[*index] {
-                Some(f) => Ok(f.python_value(py)),
+                Some(f) => Ok(f.to_object(py)),
                 None => Ok(py.None()),
             }
         } else {
@@ -33,10 +33,7 @@ impl ModelData {
     fn model_dump(&mut self, py: Python) -> PyResult<PyObject> {
         let dict = PyDict::new_bound(py);
         for (field_info, field_value) in self.items_update(py) {
-            dict.set_item(
-                &field_info.name_py.clone_ref(py),
-                field_value.python_value(py),
-            )?;
+            dict.set_item(&field_info.name_py.clone_ref(py), field_value.to_object(py))?;
         }
         Ok(dict.into())
     }
@@ -99,21 +96,35 @@ impl Serialize for ModelDataSerializer<'_> {
 
         for (field_info, opt_field_value) in items {
             if let Some(field_value) = opt_field_value {
-                map.serialize_entry(&field_info.name, field_value.raw_value())?;
+                // map.serialize_entry(&field_info.name, field_value.raw_value())?;
+                match field_value {
+                    FieldValue::Py(py_obj) => {
+                        map.serialize_entry(&field_info.name, &SerializePy(py_obj.bind(self.py)))?;
+                    }
+                    FieldValue::Model(model) => todo!("serialize model {model:?}"),
+                    FieldValue::Raw(raw) => {
+                        map.serialize_entry(&field_info.name, raw)?;
+                    }
+                    FieldValue::Both(_, raw) => {
+                        map.serialize_entry(&field_info.name, raw)?;
+                    }
+                }
             } else {
-                let py_data = PyData(field_info.default.clone_ref(self.py).into_bound(self.py));
-                map.serialize_entry(&field_info.name, &py_data)?;
+                map.serialize_entry(
+                    &field_info.name,
+                    &SerializePy(&field_info.default.clone_ref(self.py).into_bound(self.py)),
+                )?;
             }
         }
         map.end()
     }
 }
 
-struct PyData<'py>(Bound<'py, PyAny>);
+struct SerializePy<'py>(&'py Bound<'py, PyAny>);
 
-impl Serialize for PyData<'_> {
+impl Serialize for SerializePy<'_> {
     fn serialize<S: serde::ser::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let py_value = &self.0;
+        let py_value = self.0;
         if py_value.is_none() {
             serializer.serialize_none()
         } else if let Ok(value) = py_value.downcast::<PyBool>() {
@@ -128,7 +139,7 @@ impl Serialize for PyData<'_> {
         } else if let Ok(value) = py_value.downcast::<PyList>() {
             let mut list_ser = serializer.serialize_seq(Some(value.len()))?;
             for item in value.iter() {
-                list_ser.serialize_element(&PyData(item))?;
+                list_ser.serialize_element(&SerializePy(&item))?;
             }
             list_ser.end()
         } else if let Ok(value) = py_value.downcast::<PyDict>() {
@@ -139,7 +150,7 @@ impl Serialize for PyData<'_> {
                     .map_err(serde::ser::Error::custom)?
                     .to_str()
                     .map_err(serde::ser::Error::custom)?;
-                map_ser.serialize_entry(&key, &PyData(value))?;
+                map_ser.serialize_entry(&key, &SerializePy(&value))?;
             }
             map_ser.end()
         } else {

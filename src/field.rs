@@ -53,21 +53,23 @@ impl FieldValue {
         FieldValue::Raw(into_raw.into())
     }
 
-    pub fn python_value(&self, py: Python) -> PyObject {
-        match self {
-            Self::Py(py_obj) => py_obj.clone_ref(py),
-            Self::Model(py_obj) => py_obj.clone_ref(py),
-            Self::Raw(raw) => raw.to_object(py),
-            Self::Both(py_obj, _) => py_obj.clone_ref(py),
-        }
-    }
-
     pub fn raw_value(&self) -> &RawData {
         match self {
             Self::Py(_) => todo!("convert PyObject to RawData"),
             Self::Model(_) => todo!("convert Model PyObject to RawData"),
             Self::Raw(raw) => raw,
             Self::Both(_, raw) => raw,
+        }
+    }
+}
+
+impl ToPyObject for FieldValue {
+    fn to_object(&self, py: Python) -> PyObject {
+        match self {
+            Self::Py(py_obj) => py_obj.clone_ref(py),
+            Self::Model(py_obj) => py_obj.clone_ref(py),
+            Self::Raw(raw) => raw.to_object(py),
+            Self::Both(py_obj, _) => py_obj.clone_ref(py),
         }
     }
 }

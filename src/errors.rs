@@ -119,16 +119,16 @@ pub enum ValError {
 }
 
 impl ValError {
-    pub fn with_loc(self, loc_into: impl Into<LocItem>) -> Self {
+    pub fn line_errors_with_loc(self, loc_into: impl Into<LocItem>) -> PyResult<Vec<LineError>> {
         match self {
             ValError::LineErrors(mut errors) => {
                 let loc = loc_into.into();
                 for error in errors.iter_mut() {
                     error.rev_loc.push(loc.clone());
                 }
-                ValError::LineErrors(errors)
+                Ok(errors)
             }
-            ValError::InternalError(e) => ValError::InternalError(e),
+            ValError::InternalError(e) => Err(e),
         }
     }
 

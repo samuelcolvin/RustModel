@@ -38,7 +38,7 @@ model: MyModel = validator.validate(input_data)
 print('foo:', model.foo)
 print('bar:', model.bar)
 print('model dump:', model.model_dump())
-# print('model dump json:', model.model_dump_json())
+print('model dump json:', model.model_dump_json())
 
 timer = timeit.Timer("v.validate(input_data)", globals={'v': validator, 'input_data': input_data})
 n, t = timer.autorange()
