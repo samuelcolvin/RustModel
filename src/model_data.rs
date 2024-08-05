@@ -4,10 +4,11 @@ use pyo3::exceptions::{PyAttributeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString};
 
-use crate::field::{FieldInfo, FieldValue};
 use ahash::AHashMap;
 use serde::ser::{SerializeMap, SerializeSeq};
 use serde::Serialize;
+
+use crate::field::{FieldInfo, FieldValue};
 
 #[derive(Debug)]
 #[pyclass(module = "rustmodel")]
@@ -73,7 +74,7 @@ impl ModelData {
                 let value = match v {
                     Some(f) => f,
                     None => {
-                        *v = Some(FieldValue::new_py(f.default.clone_ref(py)));
+                        *v = Some(FieldValue::Py(f.default.clone_ref(py)));
                         v.as_ref().unwrap()
                     }
                 };

@@ -74,21 +74,8 @@ pub enum FieldValue {
 }
 
 impl FieldValue {
-    pub fn new_py(py_object: PyObject) -> Self {
-        FieldValue::Py(py_object)
-    }
-
     pub fn new_raw(into_raw: impl Into<RawData>) -> Self {
         FieldValue::Raw(into_raw.into())
-    }
-
-    pub fn raw_value(&self) -> &RawData {
-        match self {
-            Self::Py(_) => todo!("convert PyObject to RawData"),
-            Self::Model(_) => todo!("convert Model PyObject to RawData"),
-            Self::Raw(raw) => raw,
-            Self::Both(_, raw) => raw,
-        }
     }
 }
 

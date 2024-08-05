@@ -39,22 +39,19 @@ validator = SchemaValidator(
             {
                 'name': 'bar',
                 'schema': {'type': 'int'},
-                'default': 123,
             },
             {
                 'name': 'spam',
                 'schema': {'type': 'string'},
-                'default': 'x',
             },
             {
                 'name': 'ham',
                 'schema': {'type': 'int'},
-                'default': 456,
             },
             {
                 'name': 'egg',
                 'schema': {'type': 'string'},
-                'default': 'y',
+                'default': 'omelette',
             }
         ]
     }

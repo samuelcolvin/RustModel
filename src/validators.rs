@@ -43,6 +43,7 @@ impl Validator for CombinedValidator {
             CombinedValidator::Model(v) => v.validate_python(py, data),
         }
     }
+
     fn validate_json(&self, py: Python, jiter: &mut Jiter) -> ValResult<FieldValue> {
         match self {
             CombinedValidator::String(v) => v.validate_json(py, jiter),
@@ -58,9 +59,7 @@ pub struct StringValidator;
 impl Validator for StringValidator {
     fn validate_python<'py>(&self, py: Python, data: &Bound<'py, PyAny>) -> ValResult<FieldValue> {
         let py_str: &Bound<PyString> = data.downcast().map_err(|_| ErrorType::StringType)?;
-        Ok(FieldValue::new_py(py_str.into_py(py)))
-        // let s = py_str.to_str().map_err(|_| ErrorType::StringType)?;
-        // Ok(FieldValue::new_raw(s))
+        Ok(FieldValue::Py(py_str.into_py(py)))
     }
 
     fn validate_json(&self, _: Python, jiter: &mut Jiter) -> ValResult<FieldValue> {

@@ -40,18 +40,95 @@ impl ModelValidator {
             cls: class.into(),
         })
     }
+}
 
-    fn finish_validation(
-        &self,
-        py: Python,
-        fields_found: usize,
-        mut errors: Vec<LineError>,
-        data: Vec<Option<FieldValue>>,
-    ) -> ValResult<FieldValue> {
-        if fields_found != self.field_info.len() {
-            for (info, value) in self.field_info.iter().zip(data.iter()) {
+impl Validator for ModelValidator {
+    fn validate_python<'py>(&self, py: Python, data: &Bound<'py, PyAny>) -> ValResult<FieldValue> {
+        ModelValidate::new(self).validate_python(py, data)
+    }
+
+    fn validate_json(&self, py: Python, jiter: &mut Jiter) -> ValResult<FieldValue> {
+        ModelValidate::new(self).validate_json(py, jiter)
+    }
+}
+
+struct ModelValidate<'a> {
+    validator: &'a ModelValidator,
+    errors: Vec<LineError>,
+    data: Vec<Option<FieldValue>>,
+    field_count: usize,
+    fields_found: usize,
+}
+
+impl<'a> ModelValidate<'a> {
+    fn new(validator: &'a ModelValidator) -> Self {
+        let field_count = validator.field_info.len();
+        Self {
+            validator,
+            errors: Vec::new(),
+            // can't clone `FieldValue`
+            data: (0..field_count).map(|_| None).collect(),
+            field_count,
+            fields_found: 0,
+        }
+    }
+
+    fn validate_python<'py>(mut self, py: Python, data: &Bound<'py, PyAny>) -> ValResult<FieldValue> {
+        let dict = data.downcast::<PyDict>().map_err(|_| ErrorType::DictType)?;
+
+        for (key, value) in dict.iter() {
+            if let Ok(key_py_str) = key.downcast::<PyString>() {
+                let key_str = key_py_str.to_str()?;
+                if let Some((index, field_info)) = self.find_validator(key_str) {
+                    match field_info.validator.validate_python(py, &value) {
+                        Ok(field_value) => self.set_value(index, field_value),
+                        Err(e) => self.errors.extend(e.line_errors_with_loc(key_str)?),
+                    }
+                }
+            }
+        }
+
+        self.finish(py)
+    }
+
+    fn validate_json(mut self, py: Python, jiter: &mut Jiter) -> ValResult<FieldValue> {
+        if let Some(first_key) = jiter.next_object()? {
+            self.validate_json_field(py, first_key.to_string(), jiter)?;
+
+            while let Some(key) = jiter.next_key()? {
+                self.validate_json_field(py, key.to_string(), jiter)?;
+            }
+        }
+
+        self.finish(py)
+    }
+
+    fn validate_json_field(&mut self, py: Python, k: String, jiter: &mut Jiter) -> ValResult<()> {
+        if let Some((index, field_info)) = self.find_validator(&k) {
+            match field_info.validator.validate_json(py, jiter) {
+                Ok(field_value) => self.set_value(index, field_value),
+                Err(e) => self.errors.extend(e.line_errors_with_loc(k.as_str())?),
+            };
+        } else {
+            jiter.next_skip()?;
+        }
+        Ok(())
+    }
+
+    fn find_validator(&self, key: &str) -> Option<(usize, &FieldInfo)> {
+        self.validator.key_lookup.get(key).map(|index| (*index, &self.validator.field_info[*index]))
+    }
+
+    fn set_value(&mut self, index: usize, value: FieldValue) {
+        self.data[index] = Some(value);
+        self.fields_found += 1;
+    }
+
+    fn finish(mut self, py: Python) -> ValResult<FieldValue> {
+        if self.fields_found != self.field_count {
+            for (info, value) in self.validator.field_info.iter().zip(self.data.iter()) {
                 if value.is_none() && info.required {
-                    errors.push(LineError::new_loc(
+                    self.errors.push(LineError::new_loc(
                         ErrorType::MissingField,
                         info.name.as_str(),
                     ));
@@ -59,10 +136,10 @@ impl ModelValidator {
             }
         }
 
-        let instance = create_class(self.cls.bind(py))?;
+        let instance = create_class(self.validator.cls.bind(py))?;
 
-        if errors.is_empty() {
-            let model_data = ModelData::new(&self.field_info, data, &self.key_lookup);
+        if self.errors.is_empty() {
+            let model_data = ModelData::new(&self.validator.field_info, self.data, &self.validator.key_lookup);
             force_setattr(
                 py,
                 &instance,
@@ -71,84 +148,13 @@ impl ModelValidator {
             )?;
             Ok(FieldValue::Model(instance.into_py(py)))
         } else {
-            Err(errors.into())
+            Err(self.errors.into())
         }
-    }
-}
-
-impl Validator for ModelValidator {
-    fn validate_python<'py>(&self, py: Python, data: &Bound<'py, PyAny>) -> ValResult<FieldValue> {
-        let dict = data.downcast::<PyDict>().map_err(|_| ErrorType::DictType)?;
-        let mut errors: Vec<LineError> = Vec::new();
-
-        // can't clone `FieldValue`
-        let mut data: Vec<Option<FieldValue>> = (0..self.field_info.len()).map(|_| None).collect();
-        let mut fields_found = 0;
-
-        for (key, value) in dict.iter() {
-            if let Ok(key_py_str) = key.downcast::<PyString>() {
-                let key_str = key_py_str.to_str()?;
-                if let Some(index) = self.key_lookup.get(key_str) {
-                    let field_info = &self.field_info[*index];
-                    match field_info.validator.validate_python(py, &value) {
-                        Ok(field_value) => {
-                            data[*index] = Some(field_value);
-                            fields_found += 1;
-                        }
-                        Err(e) => errors.extend(e.line_errors_with_loc(key_str)?),
-                    }
-                }
-            }
-        }
-
-        self.finish_validation(py, fields_found, errors, data)
-    }
-
-    fn validate_json(&self, py: Python, jiter: &mut Jiter) -> ValResult<FieldValue> {
-        let mut errors: Vec<LineError> = Vec::new();
-
-        let field_count = self.field_info.len();
-        let mut data: Vec<Option<FieldValue>> = (0..field_count).map(|_| None).collect();
-        let mut fields_found = 0;
-
-        if let Some(k) = jiter.next_object()? {
-            let k = k.to_string();
-            if let Some(index) = self.key_lookup.get(&k) {
-                let field_info = &self.field_info[*index];
-                match field_info.validator.validate_json(py, jiter) {
-                    Ok(field_value) => {
-                        data[*index] = Some(field_value);
-                        fields_found += 1;
-                    }
-                    Err(e) => errors.extend(e.line_errors_with_loc(k.as_str())?),
-                };
-            } else {
-                jiter.next_skip()?;
-            }
-
-            while let Some(k) = jiter.next_key()? {
-                let k = k.to_string();
-                if let Some(index) = self.key_lookup.get(&k) {
-                    let field_info = &self.field_info[*index];
-                    match field_info.validator.validate_json(py, jiter) {
-                        Ok(field_value) => {
-                            data[*index] = Some(field_value);
-                            fields_found += 1;
-                        }
-                        Err(e) => errors.extend(e.line_errors_with_loc(k.as_str())?),
-                    };
-                } else {
-                    jiter.next_skip()?;
-                }
-            }
-        }
-
-        self.finish_validation(py, fields_found, errors, data)
     }
 }
 
 /// The rest here is taken directly from pydantic-core
-pub(super) fn create_class<'py>(class: &Bound<'py, PyType>) -> PyResult<Bound<'py, PyAny>> {
+fn create_class<'py>(class: &Bound<'py, PyType>) -> PyResult<Bound<'py, PyAny>> {
     let py = class.py();
     let args = PyTuple::empty_bound(py);
     let raw_type = class.as_type_ptr();
@@ -167,16 +173,12 @@ pub(super) fn create_class<'py>(class: &Bound<'py, PyType>) -> PyResult<Bound<'p
     }
 }
 
-pub(super) fn force_setattr<N, V>(
+fn force_setattr(
     py: Python<'_>,
     obj: &Bound<'_, PyAny>,
-    attr_name: N,
-    value: V,
-) -> PyResult<()>
-where
-    N: ToPyObject,
-    V: ToPyObject,
-{
+    attr_name: impl ToPyObject,
+    value: impl ToPyObject,
+) -> PyResult<()> {
     let attr_name = attr_name.to_object(py);
     let value = value.to_object(py);
     unsafe {
@@ -187,7 +189,7 @@ where
     }
 }
 
-pub fn py_error_on_minusone(py: Python<'_>, result: std::os::raw::c_int) -> PyResult<()> {
+fn py_error_on_minusone(py: Python<'_>, result: std::os::raw::c_int) -> PyResult<()> {
     if result != -1 {
         Ok(())
     } else {
