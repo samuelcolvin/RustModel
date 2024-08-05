@@ -2,58 +2,42 @@ use std::fmt::Debug;
 use std::ptr::null_mut;
 use std::sync::Arc;
 
-use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList, PyString, PyTuple, PyType};
 use pyo3::exceptions::PyTypeError;
 use pyo3::intern;
+use pyo3::prelude::*;
+use pyo3::types::{PyDict, PyString, PyTuple, PyType};
 
 use ahash::AHashMap;
 
 use crate::errors::{ErrorType, LineError, ValResult};
-use crate::field::{FieldInfo, FieldValue, parse_fields};
+use crate::field::{get_as_req, parse_fields, FieldInfo, FieldValue};
 use crate::model_data::ModelData;
 use crate::validators::Validator;
 
 #[derive(Debug)]
-#[pyclass(module = "fastmodel")]
 pub struct ModelValidator {
     field_info: Arc<Vec<FieldInfo>>,
     key_lookup: Arc<AHashMap<String, usize>>,
-    class: Py<PyType>,
+    cls: Py<PyType>,
 }
 
-#[pymethods]
 impl ModelValidator {
-    #[new]
-    fn new(py: Python, class: Bound<'_, PyType>, fields: Bound<'_, PyList>) -> PyResult<Self> {
-        // hard code fields for now
-        let field_info = parse_fields(py, fields)?;
+    pub fn new(schema: &Bound<'_, PyDict>) -> PyResult<Self> {
+        let fields = get_as_req(schema, "fields")?;
+        let field_info = parse_fields(schema.py(), fields)?;
         let key_lookup: AHashMap<String, usize> = field_info
             .iter()
             .enumerate()
             .map(|(i, f)| (f.name.clone(), i))
             .collect();
 
+        let class: Bound<PyType> = get_as_req(schema, "cls")?;
+
         Ok(Self {
             field_info: Arc::new(field_info),
             key_lookup: Arc::new(key_lookup),
-            class: class.into(),
+            cls: class.into(),
         })
-    }
-
-    fn validate<'py>(&self, py: Python, data: &Bound<'py, PyAny>) -> PyResult<PyObject> {
-        match self.validate_python(py, data) {
-            Ok(f) => Ok(f.into_py(py)),
-            Err(e) => Err(e.to_py_err(py)),
-        }
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "ModelValidator(class={}, field_info={:#?})",
-            self.class,
-            self.field_info
-        )
     }
 }
 
@@ -94,7 +78,7 @@ impl Validator for ModelValidator {
             }
         }
 
-        let instance = create_class(self.class.bind(py))?;
+        let instance = create_class(self.cls.bind(py))?;
 
         if errors.is_empty() {
             let model_data = ModelData::new(&self.field_info, data, &self.key_lookup);

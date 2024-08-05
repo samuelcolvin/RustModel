@@ -1,5 +1,5 @@
 import timeit
-from fastmodel import ModelValidator
+from fastmodel import SchemaValidator
 from dataclasses import dataclass
 from pydantic import BaseModel
 
@@ -23,53 +23,56 @@ class MyModel(FastModel):
     bar: int
     spam: str
     ham: int
-    egg: str
+    egg: str = 'y'
 
 
-validator = ModelValidator(
-    MyModel,
-    [
-        {
-            'name': 'foo',
-            'type': 'string',
-        },
-        {
-            'name': 'bar',
-            'type': 'int',
-            'default': 123,
-        },
-        {
-            'name': 'spam',
-            'type': 'string',
-            'default': 'x',
-        },
-        {
-            'name': 'ham',
-            'type': 'int',
-            'default': 456,
-        },
-        {
-            'name': 'egg',
-            'type': 'string',
-            'default': 'y',
-        }
-    ]
+validator = SchemaValidator(
+    {
+        'type': 'model',
+        'cls': MyModel,
+        'fields': [
+            {
+                'name': 'foo',
+                'schema': {'type': 'string'},
+            },
+            {
+                'name': 'bar',
+                'schema': {'type': 'int'},
+                'default': 123,
+            },
+            {
+                'name': 'spam',
+                'schema': {'type': 'string'},
+                'default': 'x',
+            },
+            {
+                'name': 'ham',
+                'schema': {'type': 'int'},
+                'default': 456,
+            },
+            {
+                'name': 'egg',
+                'schema': {'type': 'string'},
+                'default': 'y',
+            }
+        ]
+    }
 )
 
 input_data = {
     'ham': 123,
     'foo': 'hello',
-    'egg': 'EGG',
+    # 'egg': 'EGG',
     'bar': 456,
     'spam': 'SPAM',
 }
-model: MyModel = validator.validate(input_data)
+model: MyModel = validator.validate_python(input_data)
 print('foo:', model.foo)
 print('bar:', model.bar)
 print('model dump:', model.model_dump())
 print('model dump json:', model.model_dump_json())
 
-timer = timeit.Timer("v.validate(input_data)", globals={'v': validator, 'input_data': input_data})
+timer = timeit.Timer("v.validate_python(input_data)", globals={'v': validator, 'input_data': input_data})
 n, t = timer.autorange()
 iter_time = t / n
 print(f'FastModel: {iter_time * 1_000_000_000:0.2f} ns')
@@ -81,7 +84,7 @@ class MyDataclass:
     bar: int
     spam: str
     ham: int
-    egg: str
+    egg: str = 'y'
 
 
 timer = timeit.Timer("MyDataclass(**input_data)", globals={'MyDataclass': MyDataclass, 'input_data': input_data})
@@ -95,7 +98,7 @@ class MyPydanticModel(BaseModel):
     bar: int
     spam: str
     ham: int
-    egg: str
+    egg: str = 'y'
 
 
 timer = timeit.Timer(

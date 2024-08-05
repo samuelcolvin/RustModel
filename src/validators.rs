@@ -2,29 +2,32 @@ use std::fmt::Debug;
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::{PyString};
+use pyo3::types::{PyDict, PyString};
 
 use crate::errors::{ErrorType, ValResult};
-use crate::field::FieldValue;
+use crate::field::{get_as_req, FieldValue};
+use crate::model_validator::ModelValidator;
 
 pub trait Validator: Debug {
     fn validate_python<'py>(&self, py: Python, data: &Bound<'py, PyAny>) -> ValResult<FieldValue>;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum CombinedValidator {
     String(StringValidator),
     Int(IntValidator),
+    Model(ModelValidator),
 }
 
 impl CombinedValidator {
-    pub fn new(validator: &str) -> PyResult<Self> {
-        match validator {
+    pub fn new(schema: &Bound<'_, PyDict>) -> PyResult<Self> {
+        let schema_type: String = get_as_req(schema, "type")?;
+        match schema_type.as_ref() {
             "string" => Ok(Self::String(StringValidator)),
             "int" => Ok(Self::Int(IntValidator)),
+            "model" => Ok(Self::Model(ModelValidator::new(schema)?)),
             _ => Err(PyValueError::new_err(format!(
-                "Unknown validator: {}",
-                validator
+                "Unknown validator: {schema_type}",
             ))),
         }
     }
@@ -35,6 +38,7 @@ impl Validator for CombinedValidator {
         match self {
             CombinedValidator::String(v) => v.validate_python(py, data),
             CombinedValidator::Int(v) => v.validate_python(py, data),
+            CombinedValidator::Model(v) => v.validate_python(py, data),
         }
     }
 }
