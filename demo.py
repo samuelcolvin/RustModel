@@ -1,10 +1,10 @@
 import timeit
-from fastmodel import SchemaValidator
+from rustmodel import SchemaValidator
 from dataclasses import dataclass
 from pydantic import BaseModel
 
 
-class FastModel:
+class RustModel:
     __slots__ = ('__pydantic_model_data__',)
     # __pydantic_model_data__: ModelData
 
@@ -18,7 +18,7 @@ class FastModel:
         return self.__pydantic_model_data__.model_dump_json()
 
 
-class MyModel(FastModel):
+class MyModel(RustModel):
     foo: str
     bar: int
     spam: str
@@ -75,7 +75,7 @@ print('model dump json:', model.model_dump_json())
 timer = timeit.Timer("v.validate_python(input_data)", globals={'v': validator, 'input_data': input_data})
 n, t = timer.autorange()
 iter_time = t / n
-print(f'FastModel: {iter_time * 1_000_000_000:0.2f} ns')
+print(f'RustModel: {iter_time * 1_000_000_000:0.2f} ns')
 
 
 @dataclass

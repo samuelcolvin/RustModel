@@ -10,7 +10,7 @@ mod model_validator;
 mod validators;
 
 #[derive(Debug)]
-#[pyclass(module = "fastmodel")]
+#[pyclass(module = "rustmodel")]
 pub struct SchemaValidator {
     validator: CombinedValidator,
 }
@@ -35,7 +35,7 @@ impl SchemaValidator {
 }
 
 #[pymodule]
-fn fastmodel(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn rustmodel(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<SchemaValidator>()?;
     Ok(())
 }

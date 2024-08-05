@@ -10,7 +10,7 @@ use serde::ser::{SerializeMap, SerializeSeq};
 use serde::Serialize;
 
 #[derive(Debug)]
-#[pyclass(module = "fastmodel")]
+#[pyclass(module = "rustmodel")]
 pub struct ModelData {
     field_info: Arc<Vec<FieldInfo>>,
     field_data: Vec<Option<FieldValue>>,
