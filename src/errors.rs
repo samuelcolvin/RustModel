@@ -1,3 +1,4 @@
+use jiter::JiterError;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
@@ -84,7 +85,9 @@ pub enum ErrorType {
     StringType,
     StringUnicode,
     IntType,
+    IntTooBig,
     DictType,
+    JsonError(String),
 }
 
 impl ErrorType {
@@ -175,5 +178,12 @@ impl From<LineError> for ValError {
 impl From<ErrorType> for ValError {
     fn from(error_type: ErrorType) -> Self {
         Self::LineErrors(vec![LineError::new(error_type)])
+    }
+}
+
+impl From<JiterError> for ValError {
+    fn from(jiter_error: JiterError) -> Self {
+        let line_error = LineError::new(ErrorType::JsonError(jiter_error.to_string()));
+        Self::LineErrors(vec![line_error])
     }
 }

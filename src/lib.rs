@@ -29,6 +29,14 @@ impl SchemaValidator {
         }
     }
 
+    fn validate_json(&self, py: Python, json_data: &[u8]) -> PyResult<PyObject> {
+        let mut jiter = jiter::Jiter::new(json_data);
+        match self.validator.validate_json(py, &mut jiter) {
+            Ok(f) => Ok(f.into_py(py)),
+            Err(e) => Err(e.to_py_err(py)),
+        }
+    }
+
     fn __repr__(&self) -> String {
         format!("SchemaValidator(validator={:#?})", self.validator)
     }

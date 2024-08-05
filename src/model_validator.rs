@@ -8,6 +8,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString, PyTuple, PyType};
 
 use ahash::AHashMap;
+use jiter::Jiter;
 
 use crate::errors::{ErrorType, LineError, ValResult};
 use crate::field::{get_as_req, parse_fields, FieldInfo, FieldValue};
@@ -39,35 +40,15 @@ impl ModelValidator {
             cls: class.into(),
         })
     }
-}
 
-impl Validator for ModelValidator {
-    fn validate_python<'py>(&self, py: Python, data: &Bound<'py, PyAny>) -> ValResult<FieldValue> {
-        let dict = data.downcast::<PyDict>().map_err(|_| ErrorType::DictType)?;
-        let mut errors: Vec<LineError> = Vec::new();
-
-        let field_count = self.field_info.len();
-        // can't clone `FieldValue`
-        let mut data: Vec<Option<FieldValue>> = (0..field_count).map(|_| None).collect();
-        let mut fields_found = 0;
-
-        for (key, value) in dict.iter() {
-            if let Ok(key_py_str) = key.downcast::<PyString>() {
-                let key_str = key_py_str.to_str()?;
-                if let Some(index) = self.key_lookup.get(key_str) {
-                    let field_info = &self.field_info[*index];
-                    match field_info.validator.validate_python(py, &value) {
-                        Ok(field_value) => {
-                            data[*index] = Some(field_value);
-                            fields_found += 1;
-                        }
-                        Err(e) => errors.extend(e.line_errors_with_loc(key_str)?),
-                    }
-                }
-            }
-        }
-
-        if fields_found != field_count {
+    fn finish_validation(
+        &self,
+        py: Python,
+        fields_found: usize,
+        mut errors: Vec<LineError>,
+        data: Vec<Option<FieldValue>>,
+    ) -> ValResult<FieldValue> {
+        if fields_found != self.field_info.len() {
             for (info, value) in self.field_info.iter().zip(data.iter()) {
                 if value.is_none() && info.required {
                     errors.push(LineError::new_loc(
@@ -92,6 +73,77 @@ impl Validator for ModelValidator {
         } else {
             Err(errors.into())
         }
+    }
+}
+
+impl Validator for ModelValidator {
+    fn validate_python<'py>(&self, py: Python, data: &Bound<'py, PyAny>) -> ValResult<FieldValue> {
+        let dict = data.downcast::<PyDict>().map_err(|_| ErrorType::DictType)?;
+        let mut errors: Vec<LineError> = Vec::new();
+
+        // can't clone `FieldValue`
+        let mut data: Vec<Option<FieldValue>> = (0..self.field_info.len()).map(|_| None).collect();
+        let mut fields_found = 0;
+
+        for (key, value) in dict.iter() {
+            if let Ok(key_py_str) = key.downcast::<PyString>() {
+                let key_str = key_py_str.to_str()?;
+                if let Some(index) = self.key_lookup.get(key_str) {
+                    let field_info = &self.field_info[*index];
+                    match field_info.validator.validate_python(py, &value) {
+                        Ok(field_value) => {
+                            data[*index] = Some(field_value);
+                            fields_found += 1;
+                        }
+                        Err(e) => errors.extend(e.line_errors_with_loc(key_str)?),
+                    }
+                }
+            }
+        }
+
+        self.finish_validation(py, fields_found, errors, data)
+    }
+
+    fn validate_json(&self, py: Python, jiter: &mut Jiter) -> ValResult<FieldValue> {
+        let mut errors: Vec<LineError> = Vec::new();
+
+        let field_count = self.field_info.len();
+        let mut data: Vec<Option<FieldValue>> = (0..field_count).map(|_| None).collect();
+        let mut fields_found = 0;
+
+        if let Some(k) = jiter.next_object()? {
+            let k = k.to_string();
+            if let Some(index) = self.key_lookup.get(&k) {
+                let field_info = &self.field_info[*index];
+                match field_info.validator.validate_json(py, jiter) {
+                    Ok(field_value) => {
+                        data[*index] = Some(field_value);
+                        fields_found += 1;
+                    }
+                    Err(e) => errors.extend(e.line_errors_with_loc(k.as_str())?),
+                };
+            } else {
+                jiter.next_skip()?;
+            }
+
+            while let Some(k) = jiter.next_key()? {
+                let k = k.to_string();
+                if let Some(index) = self.key_lookup.get(&k) {
+                    let field_info = &self.field_info[*index];
+                    match field_info.validator.validate_json(py, jiter) {
+                        Ok(field_value) => {
+                            data[*index] = Some(field_value);
+                            fields_found += 1;
+                        }
+                        Err(e) => errors.extend(e.line_errors_with_loc(k.as_str())?),
+                    };
+                } else {
+                    jiter.next_skip()?;
+                }
+            }
+        }
+
+        self.finish_validation(py, fields_found, errors, data)
     }
 }
 

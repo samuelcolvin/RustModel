@@ -1,3 +1,4 @@
+import json
 import timeit
 from rustmodel import SchemaValidator
 from dataclasses import dataclass
@@ -66,16 +67,24 @@ input_data = {
     'bar': 456,
     'spam': 'SPAM',
 }
-model: MyModel = validator.validate_python(input_data)
+input_json = json.dumps(input_data).encode()
+# model: MyModel = validator.validate_python(input_data)
+model: MyModel = validator.validate_json(input_json)
 print('foo:', model.foo)
 print('bar:', model.bar)
 print('model dump:', model.model_dump())
 print('model dump json:', model.model_dump_json())
 
+justify = 20
 timer = timeit.Timer("v.validate_python(input_data)", globals={'v': validator, 'input_data': input_data})
 n, t = timer.autorange()
 iter_time = t / n
-print(f'RustModel: {iter_time * 1_000_000_000:0.2f} ns')
+print('RustModel python:'.ljust(justify), f'{iter_time * 1_000_000_000:0.2f} ns')
+
+timer = timeit.Timer("v.validate_json(input_json)", globals={'v': validator, 'input_json': input_json})
+n, t = timer.autorange()
+iter_time = t / n
+print('RustModel JSON:'.ljust(justify), f'{iter_time * 1_000_000_000:0.2f} ns')
 
 
 @dataclass
@@ -90,7 +99,15 @@ class MyDataclass:
 timer = timeit.Timer("MyDataclass(**input_data)", globals={'MyDataclass': MyDataclass, 'input_data': input_data})
 n, t = timer.autorange()
 iter_time = t / n
-print(f'Dataclass: {iter_time * 1_000_000_000:0.2f} ns')
+print('Dataclass python:'.ljust(justify), f'{iter_time * 1_000_000_000:0.2f} ns')
+
+timer = timeit.Timer(
+    "MyDataclass(**json_loads(input_json))",
+    globals={'MyDataclass': MyDataclass, 'json_loads': json.loads, 'input_json': input_json}
+)
+n, t = timer.autorange()
+iter_time = t / n
+print('Dataclass JSON:'.ljust(justify), f'{iter_time * 1_000_000_000:0.2f} ns')
 
 
 class MyPydanticModel(BaseModel):
@@ -107,4 +124,11 @@ timer = timeit.Timer(
 )
 n, t = timer.autorange()
 iter_time = t / n
-print(f'Pydantic: {iter_time * 1_000_000_000:0.2f} ns')
+print('Pydantic python:'.ljust(justify), f'{iter_time * 1_000_000_000:0.2f} ns')
+timer = timeit.Timer(
+    "MyPydanticModel.model_validate_json(input_json)",
+    globals={'MyPydanticModel': MyPydanticModel, 'input_json': input_json}
+)
+n, t = timer.autorange()
+iter_time = t / n
+print('Pydantic JSON:'.ljust(justify), f'{iter_time * 1_000_000_000:0.2f} ns')
